@@ -2,49 +2,192 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Scratch JSON ハック生成器</title>
+    <link rel="icon" href="icon.png" type="image/png">
     <style>
-        body { font-family: sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; background: #f0f2f5; }
+        body { font-family: sans-serif; max-width: 850px; margin: 0 auto; padding: 20px; background: #f3f4f6; color: #1f2937; }
+        .header { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; }
+        .header img { width: 50px; height: 50px; border-radius: 8px; }
+        .header h1 { margin: 0; }
         .container { display: flex; gap: 20px; }
-        .panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         .sidebar { flex: 1; }
-        .main { flex: 2; }
-        .block-item { background: #4c97ff; color: white; padding: 10px; margin-bottom: 10px; border-radius: 4px; cursor: pointer; }
+        .main-content { flex: 1.5; }
+        .block-item { background: #4c97ff; color: white; padding: 12px; border-radius: 4px; margin-bottom: 10px; cursor: pointer; font-weight: bold; border: 2px solid transparent; transition: 0.2s; }
+        .block-item:hover { background: #3373cc; }
         .form-group { margin-bottom: 15px; }
-        input { width: 100%; padding: 8px; box-sizing: border-box; }
-        button { background: #10b981; color: white; border: none; padding: 10px; width: 100%; font-size: 1.1rem; cursor: pointer; border-radius: 4px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 0.9rem; }
+        input { width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; box-sizing: border-box; }
+        .preview-block { padding: 10px 15px; border-radius: 20px; color: white; font-weight: bold; display: inline-block; margin-bottom: 20px; font-size: 0.9rem; }
+        .btn-download { background: #10b981; color: white; border: none; padding: 12px 20px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; font-size: 1.1rem; margin-top: 15px; transition: 0.2s; }
+        .btn-download:hover { background: #059669; }
     </style>
 </head>
 <body>
-    <h2>Scratch JSON ハック生成器</h2>
+
+    <div class="header">
+        <img src="icon.png" alt="Icon">
+        <h1>Scratch JSON ハック生成器</h1>
+    </div>
+    <p>リストからブロックを選び、文字を自由に変えて「project.json」を直接ダウンロードします。ファイルのアップロードは不要です。</p>
+
     <div class="container">
-        <div class="panel sidebar" id="block-list"></div>
-        <div class="panel main">
-            <h3>編集</h3>
+        <!-- 左側：ブロック一覧 -->
+        <div class="sidebar panel">
+            <h3>🤖 ブロック一覧</h3>
+            <div id="block-list"></div>
+        </div>
+
+        <!-- 右側：編集と保存 -->
+        <div class="main-content panel">
+            <h3>🛠 ブロックの文字を変更</h3>
+            
+            <!-- プレビュー -->
+            <div id="block-preview" class="preview-block" style="background: #ccc;">ブロックを選択してください</div>
+
+            <!-- 入力フォーム -->
             <div id="editor-fields"></div>
-            <button id="download-btn">project.json をダウンロード</button>
+
+            <!-- 直接ダウンロードボタン -->
+            <button id="download-btn" class="btn-download" style="display: none;">
+                💾 project.json をダウンロード
+            </button>
         </div>
     </div>
+
     <script>
-        // 簡易版のJSON生成ロジック
-        const projectTemplate = (blockData) => ({
-            "targets": [{"isStage":true,"name":"Stage","blocks":{}},{"isStage":false,"name":"Hacked","blocks":{"hacked_id":blockData},"costumes":[]}],
-            "meta": {"semver": "3.0.0"}
-        });
-        const presets = {
-            say: {
-                name: "💬 [言う] ハック",
-                fields: [{id: "text", label: "セリフ", default: "ハック成功"}],
-                gen: (inputs) => ({ "opcode": "looks_say", "inputs": { "MESSAGE": [2, [3, [12, inputs.text, ""], [10, ""]]] } })
+        // ハック用ブロックの設定データ
+        const blockPresets = {
+            "say_hack": {
+                name: "💬 [言う] の引数を四角(真偽値)にする",
+                color: "#855cd6",
+                fields: [{ id: "text_val", label: "言わせたい文字", default: "ハック成功！" }],
+                generator: (inputs) => ({
+                    "opcode": "looks_say",
+                    "next": null, "parent": null,
+                    "inputs": { "MESSAGE": [2, [3, [12, inputs.text_val, ""], [10, ""]]] },
+                    "fields": {}, "shadow": false, "topLevel": true
+                })
             },
-            key: {
-                name: "⌨ [キー] ハック",
-                fields: [{id: "key", label: "キー名", default: "enter"}],
-                gen: (inputs) => ({ "opcode": "sensing_keypressed", "fields": { "KEY_OPTION": [inputs.key, null] } })
+            "key_hack": {
+                name: "⌨ 通常選べない隠しキー(Enterなど)",
+                color: "#4c97ff",
+                fields: [{ id: "key_name", label: "キーの名前（例: enter, shift, space）", default: "enter" }],
+                generator: (inputs) => ({
+                    "opcode": "sensing_keypressed",
+                    "next": null, "parent": null,
+                    "inputs": {},
+                    "fields": { "KEY_OPTION": [inputs.key_name, null] },
+                    "shadow": false, "topLevel": true
+                })
             }
         };
-        // UIロジック（ブロック選択、入力反映、ダウンロード）
-        // ... (詳細は元の長いスクリプトに基づくが、ここでは機能概要とする)
+
+        let currentBlockKey = null;
+
+        // 1. ブロックリストを画面に生成
+        const blockListContainer = document.getElementById('block-list');
+        Object.keys(blockPresets).forEach(key => {
+            const btn = document.createElement('div');
+            btn.className = 'block-item';
+            btn.style.backgroundColor = blockPresets[key].color;
+            btn.innerText = blockPresets[key].name;
+            btn.addEventListener('click', () => loadBlockEditor(key));
+            blockListContainer.appendChild(btn);
+        });
+
+        // 2. 選択したブロックの入力欄を表示
+        function loadBlockEditor(key) {
+            currentBlockKey = key;
+            const block = blockPresets[key];
+            
+            const preview = document.getElementById('block-preview');
+            preview.innerText = block.name;
+            preview.style.backgroundColor = block.color;
+            
+            const fieldsContainer = document.getElementById('editor-fields');
+            fieldsContainer.innerHTML = '';
+            
+            block.fields.forEach(field => {
+                const group = document.createElement('div');
+                group.className = 'form-group';
+                
+                const label = document.createElement('label');
+                label.innerText = field.label;
+                
+                const input = document.createElement('input');
+                input.type = "text";
+                input.id = `input-${field.id}`;
+                input.value = field.default;
+                
+                group.appendChild(label);
+                group.appendChild(input);
+                fieldsContainer.appendChild(group);
+            });
+            
+            // ダウンロードボタンを表示
+            document.getElementById('download-btn').style.display = 'block';
+        }
+
+        // 3. ボタンを押した時に「完全なproject.json」の形にしてダウンロードさせる
+        document.getElementById('download-btn').addEventListener('click', () => {
+            if (!currentBlockKey) return;
+            const block = blockPresets[currentBlockKey];
+            
+            // 入力された値を取得
+            const inputs = {};
+            block.fields.forEach(field => {
+                inputs[field.id] = document.getElementById(`input-${field.id}`).value;
+            });
+            
+            // ハックブロックのデータ部分を生成
+            const hackedBlockData = block.generator(inputs);
+            
+            // Scratchが読み込める最低限の「完全なプロジェクト全体のJSON構造」をここで1から組み立てる
+            const completeProjectJson = {
+                "targets": [
+                    {
+                        "isStage": true,
+                        "name": "Stage",
+                        "variables": {}, "lists": {}, "broadcasts": {}, "blocks": {}, "comments": {}, "currentCostume": 0,
+                        "costumes": [{ "name": "backdrop1", "dataFormat": "svg", "assetId": "cd215de7e6a154c7422872d216954bce", "md5ext": "cd215de7e6a154c7422872d216954bce.svg", "rotationCenterX": 240, "rotationCenterY": 180 }],
+                        "sounds": [], "volume": 100, "layerOrder": 0, "tempo": 60, "videoTransparency": 50, "videoState": "on", "textToSpeechLanguage": null
+                    },
+                    {
+                        "isStage": false,
+                        "name": "HackedSprite",
+                        "variables": {}, "lists": {}, "broadcasts": {},
+                        "blocks": {
+                            "hacked_block_id_001": hackedBlockData // ここに生成したハックブロックを入れる
+                        },
+                        "comments": {}, "currentCostume": 0,
+                        "costumes": [{ "name": "costume1", "dataFormat": "svg", "assetId": "bcf45435305213ea49a6902261b4181c", "md5ext": "bcf45435305213ea49a6902261b4181c.svg", "rotationCenterX": 48, "rotationCenterY": 50 }],
+                        "sounds": [], "volume": 100, "layerOrder": 1, "visible": true, "x": 0, "y": 0, "size": 100, "direction": 90, "draggable": false, "rotationStyle": "all around"
+                    }
+                ],
+                "monitors": [],
+                "extensions": [],
+                "meta": { "semver": "3.0.0", "vm": "0.2.0", "agent": "Mozilla/5.0" }
+            };
+
+            // JSONオブジェクトを文字列（テキスト）に変換
+            const jsonString = JSON.stringify(completeProjectJson, null, 2);
+            
+            // ファイルとしてブラウザにダウンロードさせる処理
+            const blob = new Blob([jsonString], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = "project.json"; // ファイル名は必ずproject.jsonにする
+            document.body.appendChild(a);
+            a.click();
+            
+            // 後片付け
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
     </script>
 </body>
 </html>
